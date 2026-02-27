@@ -12,27 +12,41 @@ def home():
     return render_template("upload.html")
 
 @app.route("/upload", methods=["POST"])
-def upload():
-    file = request.files["file"]
-    df_uploaded = pd.read_csv(file)
+def upload_file():
+    file = request.files.get("file")
+    if not file:
+        return "No file uploaded", 400
 
-    df_gender = pd.read_csv(GENDER_SHEET_URL)
+    df = pd.read_csv(file)
 
-    df_uploaded["first_name"] = df_uploaded["first_name"].str.lower()
-    df_gender["first_name"] = df_gender["first_name"].str.lower()
+    # --- New part: detect first name column ---
+    if "first_name" in df.columns:
+        first_name_col = "first_name"
+    elif "First Name" in df.columns:
+        first_name_col = "First Name"
+    else:
+        return "CSV must have a column named 'first_name' or 'First Name'", 400
+    # --- end of new part ---
 
-    result = df_uploaded.merge(
-        df_gender,
-        on="first_name",
+    # Existing gender matching code
+    result = df.merge(
+        gender_df,
+        left_on=first_name_col,
+        right_on="name",  # assuming your gender list has column 'name'
         how="left"
     )
 
-    unique_name = f"output_{uuid.uuid4().hex}.csv"
-    result.to_csv(unique_name, index=False)
-
-    return send_file(unique_name, as_attachment=True)
+    # Return updated CSV
+    output = BytesIO()
+    result.to_csv(output, index=False)
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype="text/csv",
+        download_name="gender_matched.csv",
+        as_attachment=True
+    )
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))  # for Render
     app.run(host="0.0.0.0", port=port, debug=True)
